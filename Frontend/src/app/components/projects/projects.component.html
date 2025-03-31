@@ -1,0 +1,12 @@
+<div class="projects-container">
+    <app-datatable
+      [data]="projects"
+      [columns]="tableColumns"
+      [title]="'Projects'"
+      [noDataMessage]="'No projects found. Create your first project using the button above.'"
+      [addButtonLabel]="'New Project'"
+      (add)="onAddProject()"
+      (edit)="onEditProject($event)"
+      (delete)="onDeleteProject($event)">
+    </app-datatable>
+</div>

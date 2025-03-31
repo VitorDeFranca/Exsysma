@@ -1,0 +1,144 @@
+@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600&display=swap');
+
+.sidebar {
+  position: fixed;
+  left: 0;
+  top: 0;
+  height: 100vh;
+  width: 250px;
+  padding: 20px;
+  background: linear-gradient(180deg, #2c3e50, #3498db);
+  color: white;
+  transition: all 0.3s ease;
+  z-index: 1000;
+  font-family: 'Poppins', sans-serif;
+
+  &.collapsed {
+    width: 70px;
+
+    .menu-text, .sidebar-header h3 {
+      display: none;
+    }
+
+    .sidebar-header i {
+      margin-left: 5px;
+    }
+
+    .toggle-btn i {
+      transform: rotate(180deg);
+    }
+  }
+}
+
+.toggle-btn {
+  position: absolute;
+  right: -15px;
+  top: 20px;
+  background: white;
+  border-radius: 50%;
+  width: 30px;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+  transition: all 0.3s ease;
+
+  &:hover {
+    transform: scale(1.1);
+  }
+
+  i {
+    color: #3498db;
+    font-size: 14px;
+    transition: all 0.3s ease;
+  }
+}
+
+.sidebar-header {
+  display: flex;
+  align-items: center;
+  margin-bottom: 30px;
+  padding-bottom: 20px;
+  border-bottom: 1px solid rgba(255,255,255,0.1);
+
+  h3 {
+    margin: 0;
+    font-weight: 600;
+    margin-left: 15px;
+  }
+
+  i {
+    font-size: 24px;
+    transition: all 0.3s ease;
+
+    &.small {
+      font-size: 28px;
+    }
+  }
+}
+
+.sidebar-menu {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+
+  .menu-item {
+    display: flex;
+    align-items: center;
+    padding: 12px 15px;
+    border-radius: 8px;
+    color: white;
+    text-decoration: none;
+    transition: all 0.3s ease;
+    position: relative;
+    cursor: pointer;
+
+    i {
+      width: 25px;
+      font-size: 18px;
+    }
+
+    &:hover {
+      background: rgba(255,255,255,0.1);
+      transform: translateX(5px);
+    }
+
+    &.active {
+      background: rgba(255,255,255,0.15);
+      font-weight: 500;
+    }
+
+    &.logout {
+      margin-top: auto;
+      background: rgba(255,255,255,0.1);
+
+      &:hover {
+        background: rgba(255, 0, 0, 0.2);
+      }
+    }
+  }
+}
+
+@media (max-width: 768px) {
+  .sidebar {
+    width: 70px;
+
+    .menu-text, .sidebar-header h3 {
+      display: none;
+    }
+
+    &.collapsed {
+      width: 250px;
+
+      .menu-text, .sidebar-header h3 {
+        display: block;
+      }
+
+      .toggle-btn i {
+        transform: rotate(0deg);
+      }
+    }
+  }
+}

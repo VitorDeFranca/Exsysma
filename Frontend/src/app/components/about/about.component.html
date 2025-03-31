@@ -1,0 +1,24 @@
+<div class="about-container">
+    <mat-card>
+      <mat-card-header>
+        <mat-card-title>{{appName}}</mat-card-title>
+        <mat-card-subtitle>Version {{version}}</mat-card-subtitle>
+      </mat-card-header>
+      <mat-card-content>
+        <p>{{description}}</p>
+
+        <h3>Features</h3>
+        <ul>
+          <li *ngFor="let feature of features">{{feature}}</li>
+        </ul>
+
+        <h3>Technologies</h3>
+        <ul>
+          <li *ngFor="let tech of technologies">{{tech}}</li>
+        </ul>
+
+        <h3>Contact</h3>
+        <p>For support or feature requests, please contact the development team.</p>
+      </mat-card-content>
+    </mat-card>
+  </div>
