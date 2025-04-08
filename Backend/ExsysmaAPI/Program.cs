@@ -1,9 +1,35 @@
+using System.Text;
 using ExsysmaAPI;
 using ExsysmaAPI.Data;
 using ExsysmaAPI.Models;
+using ExsysmaAPI.Models.DTOs.User;
+using ExsysmaAPI.Services;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.IdentityModel.Tokens;
 
 var builder = WebApplication.CreateBuilder(args);
+
+var key = Encoding.ASCII.GetBytes(Secrets.JwtSecret);
+builder.Services.AddAuthentication(x => {
+    x.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
+    x.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
+
+}).AddJwtBearer(x => {
+    x.RequireHttpsMetadata = false;
+    x.SaveToken = true;
+    x.TokenValidationParameters = new TokenValidationParameters {
+        ValidateIssuerSigningKey = true,
+        IssuerSigningKey = new SymmetricSecurityKey(key),
+        ValidateIssuer = false,
+        ValidateAudience = false
+    };
+});
+
+builder.Services.AddAuthorization(options => {
+    options.AddPolicy("Admin", policy => policy.RequireRole("admin"));
+    options.AddPolicy("User", policy => policy.RequireRole("user"));
+});
 
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseSqlite("Data Source=exsysma.db"));
@@ -12,6 +38,8 @@ builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
 var app = builder.Build();
+app.UseAuthentication();
+app.UseAuthorization();
 
 if (app.Environment.IsDevelopment())
 {
@@ -19,22 +47,49 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 }
 
+#region users
+app.MapPost("/register", async (User user, AppDbContext db) =>
+{
+    db.Users.Add(user);
+    await db.SaveChangesAsync();
+    return Results.Created($"/users/{user.Id}", user);
+}).AllowAnonymous();
+
+app.MapPost("/login", async (UserLogin loginUser, AppDbContext db) =>
+{
+    var user = await db.Users
+        .FirstOrDefaultAsync(el => el.Username == loginUser.Username);
+
+    if (user == null)
+        return Results.BadRequest("User does not exist.");
+    if (user.Password != loginUser.Password)
+        return Results.BadRequest("Invalid credentials.");
+
+    var token = TokenService.GenerateToken(user);
+    user.Password = "";
+
+    return Results.Ok(new {user, token});
+}).AllowAnonymous();
+#endregion
+
 #region projects
 app.MapGet("/projects", async (AppDbContext db) =>
 {
     var projects = db.Projects;
 
     var projectsDTO = await projects
+        .Include(el => el.User)
         .Select(el => el.ToProjectsDTO())
         .ToListAsync();
 
     return Results.Ok(projectsDTO);
-});
+}).RequireAuthorization();
 
 app.MapGet("/projects/{id}", async (int id, AppDbContext db) =>
 {
     var project = db.Projects
         .Where(el => el.Id == id)
+        .Include(el => el.User)
         .Include(el => el.Rules!)
             .ThenInclude(el => el.Conditions)
             .ThenInclude(el => el.Variable)
@@ -48,17 +103,28 @@ app.MapGet("/projects/{id}", async (int id, AppDbContext db) =>
         .FirstOrDefaultAsync();
 
     return project != null ? Results.Ok(projectDTO) : Results.NotFound();
-});
+}).RequireAuthorization();
 
-// POST: Criar um novo projeto
 app.MapPost("/projects", async (Project project, AppDbContext db) =>
 {
     db.Projects.Add(project);
     await db.SaveChangesAsync();
-    return Results.Created($"/projects/{project.Id}", project.ToProjectDTO());
-});
 
-// PUT: Atualizar um projeto existente
+    var newProject = await db.Projects
+        .Where(el => el.Id == project.Id)
+        .Include(el => el.User)
+        .Include(el => el.Rules!)
+            .ThenInclude(el => el.Conditions)
+            .ThenInclude(el => el.Variable)
+        .Include(el => el.Rules!)
+            .ThenInclude(el => el.Conclusion)
+            .ThenInclude(el => el.Variable)
+        .Include(el => el.Variables)
+        .FirstOrDefaultAsync();
+
+    return Results.Created($"/projects/{project.Id}", newProject.ToProjectDTO());
+}).RequireAuthorization("Admin");
+
 app.MapPut("/projects/{id}", async (int id, Project projectInput, AppDbContext db) =>
 {
     var project = await db.Projects.FindAsync(id);
@@ -66,14 +132,24 @@ app.MapPut("/projects/{id}", async (int id, Project projectInput, AppDbContext d
         return Results.NotFound();
 
     project.Name = projectInput.Name;
-    project.Responsible = projectInput.Responsible;
 
     await db.SaveChangesAsync();
-    var newProject = await db.Projects.FindAsync(id)
-    return Results.Ok(newProject.ToProjectDTO());
-});
 
-// DELETE: Excluir um projeto
+    var newProject = await db.Projects
+        .Where(el => el.Id == project.Id)
+        .Include(el => el.User)
+        .Include(el => el.Rules!)
+            .ThenInclude(el => el.Conditions)
+            .ThenInclude(el => el.Variable)
+        .Include(el => el.Rules!)
+            .ThenInclude(el => el.Conclusion)
+            .ThenInclude(el => el.Variable)
+        .Include(el => el.Variables)
+        .FirstOrDefaultAsync();
+
+    return Results.Ok(newProject.ToProjectDTO());
+}).RequireAuthorization("Admin");
+
 app.MapDelete("/projects/{id}", async (int id, AppDbContext db) =>
 {
     var project = await db.Projects.FindAsync(id);
@@ -82,8 +158,9 @@ app.MapDelete("/projects/{id}", async (int id, AppDbContext db) =>
 
     db.Projects.Remove(project);
     await db.SaveChangesAsync();
+
     return Results.Ok();
-});
+}).RequireAuthorization("Admin");
 #endregion
 
 #region variables
@@ -97,14 +174,15 @@ app.MapGet("/projects/{projectId}/variables", async (int projectId, AppDbContext
         .ToListAsync();
 
     return Results.Ok(variablesDTO);
-});
+}).RequireAuthorization();
 
 app.MapGet("/projects/{projectId}/variables/{id}", async (int projectId, int id, AppDbContext db) =>
 {
     var variable = await db.Variables
         .FirstOrDefaultAsync(v => v.ProjectId == projectId && v.Id == id);
+
     return variable != null ? Results.Ok(variable) : Results.NotFound();
-});
+}).RequireAuthorization();
 
 app.MapPost("/projects/{projectId}/variables", async (int projectId, Variable variable, AppDbContext db) =>
 {
@@ -113,12 +191,16 @@ app.MapPost("/projects/{projectId}/variables", async (int projectId, Variable va
         return Results.NotFound("Projeto não encontrado");
 
     variable.ProjectId = projectId;
+
+    //barra a criação de uma variável single value com mais de um valor possível
     if (variable.Type == VariableType.SingleValue && variable.PossibleValues.Count > 1)
         return Results.BadRequest("A variável não pode possuir múltiplos valores se ela é univalorada");
+
     db.Variables.Add(variable);
     await db.SaveChangesAsync();
+
     return Results.Created($"/projects/{projectId}/variables/{variable.Id}", variable);
-});
+}).RequireAuthorization("Admin");
 
 app.MapPut("/projects/{projectId}/variables/{id}", async (int projectId, int id, Variable variableInput, AppDbContext db) =>
 {
@@ -137,8 +219,9 @@ app.MapPut("/projects/{projectId}/variables/{id}", async (int projectId, int id,
         return Results.BadRequest("A variável não pode possuir múltiplos valores se ela é univalorada");
 
     await db.SaveChangesAsync();
+
     return Results.Ok(await db.Variables.FindAsync(id));
-});
+}).RequireAuthorization("Admin");
 
 app.MapDelete("/projects/{projectId}/variables/{id}", async (int projectId, int id, AppDbContext db) =>
 {
@@ -149,8 +232,9 @@ app.MapDelete("/projects/{projectId}/variables/{id}", async (int projectId, int 
 
     db.Variables.Remove(variable);
     await db.SaveChangesAsync();
+
     return Results.Ok();
-});
+}).RequireAuthorization("Admin");
 #endregion
 
 #region rules
@@ -168,7 +252,7 @@ app.MapGet("/projects/{projectId}/rules", async (int projectId, AppDbContext db)
         .ToListAsync();
 
     return Results.Ok(rulesDTO);
-});
+}).RequireAuthorization();
 
 app.MapGet("/projects/{projectId}/rules/{id}", async (int projectId, int id, AppDbContext db) =>
 {
@@ -184,7 +268,7 @@ app.MapGet("/projects/{projectId}/rules/{id}", async (int projectId, int id, App
     var readableRule = Utils.ConvertToReadableRule(rule);
 
     return Results.Ok(readableRule);
-});
+}).RequireAuthorization();
 
 app.MapPost("/projects/{projectId}/rules", async (int projectId, Rule rule, AppDbContext db) =>
 {
@@ -195,7 +279,8 @@ app.MapPost("/projects/{projectId}/rules", async (int projectId, Rule rule, AppD
     rule.ProjectId = projectId;
 
     //verifica se as variáveis de condição existem naquele projeto e se o valor delas está dentro do esperado
-    foreach (var condition in rule.Conditions) {
+    foreach (var condition in rule.Conditions)
+    {
         var variableId = condition.VariableId;
         if (!db.Variables.Any(el => el.Id == variableId && el.ProjectId == projectId))
             return Results.BadRequest($"Não existe variável de ID {condition.VariableId} para o projeto de ID {projectId}");
@@ -216,8 +301,11 @@ app.MapPost("/projects/{projectId}/rules", async (int projectId, Rule rule, AppD
 
     db.Rules.Add(rule);
     await db.SaveChangesAsync();
-    return Results.Created($"/projects/{projectId}/rules/{rule.Id}", rule.ToRulesDTO());
-});
+
+    var readableRule = Utils.ConvertToReadableRule(rule);
+
+    return Results.Created($"/projects/{projectId}/rules/{rule.Id}", readableRule);
+}).RequireAuthorization("Admin");
 
 app.MapPut("/projects/{projectId}/rules/{id}", async (int projectId, int id, Rule ruleInput, AppDbContext db) =>
 {
@@ -233,8 +321,9 @@ app.MapPut("/projects/{projectId}/rules/{id}", async (int projectId, int id, Rul
 
     await db.SaveChangesAsync();
     var newRule = await db.Rules.FindAsync(id);
+
     return Results.Ok(newRule.ToRulesDTO);
-});
+}).RequireAuthorization("Admin");
 
 app.MapDelete("/projects/{projectId}/rules/{id}", async (int projectId, int id, AppDbContext db) =>
 {
@@ -244,8 +333,9 @@ app.MapDelete("/projects/{projectId}/rules/{id}", async (int projectId, int id, 
 
     db.Rules.Remove(rule);
     await db.SaveChangesAsync();
+
     return Results.Ok();
-});
+}).RequireAuthorization("Admin");
 #endregion
 
 app.UseHttpsRedirection();

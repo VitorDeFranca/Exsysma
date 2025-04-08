@@ -10,4 +10,5 @@ public class AppDbContext : DbContext
     public DbSet<Project> Projects { get; set; }
     public DbSet<Rule> Rules { get; set; }
     public DbSet<Variable> Variables { get; set; }
+    public DbSet<User> Users { get; set; }
 }
