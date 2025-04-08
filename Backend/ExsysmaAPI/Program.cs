@@ -1,5 +1,6 @@
 using ExsysmaAPI.Data;
 using ExsysmaAPI.Models;
+using ExsysmaAPI.Utils;
 using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -18,16 +19,23 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 }
 
-// ==================== PROJECT ENDPOINTS ====================
-
-// GET: Listar todos os projetos
+#region projects
 app.MapGet("/projects", async (AppDbContext db) =>
-    await db.Projects.ToListAsync());
+    await db.Projects
+        .Include(el => el.Variables)
+        .Include(el => el.Variables)
+        .ToListAsync());
 
-// GET: Obter um projeto específico por ID
-app.MapGet("/projects/{id}", async (int id, AppDbContext db) =>
+app.MapGet("/projects/{id}", (int id, AppDbContext db) =>
 {
-    var project = await db.Projects.FindAsync(id);
+    var project = db.Projects
+        .Include(el => el.Rules!)
+            .ThenInclude(el => el.Conditions)
+        .Include(el => el.Rules!)
+            .ThenInclude(el => el.Conclusion)
+        .Include(el => el.Variables)
+        .FirstOrDefault(el => el.Id == id);
+
     return project != null ? Results.Ok(project) : Results.NotFound();
 });
 
@@ -64,9 +72,9 @@ app.MapDelete("/projects/{id}", async (int id, AppDbContext db) =>
     await db.SaveChangesAsync();
     return Results.Ok();
 });
+#endregion
 
-// ==================== VARIABLE ENDPOINTS ====================
-
+#region variables
 // GET: Listar todas as variáveis de um projeto
 app.MapGet("/projects/{projectId}/variables", async (int projectId, AppDbContext db) =>
 {
@@ -132,27 +140,35 @@ app.MapDelete("/projects/{projectId}/variables/{id}", async (int projectId, int 
     await db.SaveChangesAsync();
     return Results.Ok();
 });
+#endregion
 
-// ==================== RULE ENDPOINTS ====================
-
-// GET: Listar todas as regras de um projeto
+#region rules
 app.MapGet("/projects/{projectId}/rules", async (int projectId, AppDbContext db) =>
 {
     var rules = await db.Rules
         .Where(r => r.ProjectId == projectId)
+        .Include(el => el.Conclusion)
+        .Include(el => el.Conditions)
         .ToListAsync();
     return Results.Ok(rules);
 });
 
-//GET: Obter uma regra específica com suas condições e conclusões
 app.MapGet("/projects/{projectId}/rules/{id}", async (int projectId, int id, AppDbContext db) =>
 {
-   var rule = await db.Rules.FirstOrDefaultAsync(r => r.ProjectId == projectId && r.Id == id);
+    var rule = await db.Rules
+        .Include(r => r.Conclusion)
+            .ThenInclude(c => c.Variable)
+        .Include(r => r.Conditions)
+            .ThenInclude(condition => condition.Variable)
+        .FirstOrDefaultAsync(r => r.ProjectId == projectId && r.Id == id);
 
-   return rule != null ? Results.Ok(rule) : Results.NotFound();
+    if (rule is null) return Results.NotFound();
+
+    var readableRule = Utils.ConvertToReadableRule(rule);
+
+    return Results.Ok(readableRule);
 });
 
-// POST: Criar uma nova regra
 app.MapPost("/projects/{projectId}/rules", async (int projectId, Rule rule, AppDbContext db) =>
 {
     var project = await db.Projects.FindAsync(projectId);
@@ -160,27 +176,34 @@ app.MapPost("/projects/{projectId}/rules", async (int projectId, Rule rule, AppD
         return Results.NotFound("Projeto não encontrado");
 
     rule.ProjectId = projectId;
+
+    var conclusionVariable = await db.Variables.FindAsync(rule.Conclusion.VariableId);
+    if (conclusionVariable is null) return Results.NotFound("Variável de conclusão não foi encontrada.");
+
+    if (!conclusionVariable.IsGoalVariable)
+        return Results.BadRequest("Uma variável que não seja objetivo não pode ser usada na conclusão.");
+
     db.Rules.Add(rule);
     await db.SaveChangesAsync();
     return Results.Created($"/projects/{projectId}/rules/{rule.Id}", rule);
 });
 
-// PUT: Atualizar uma regra existente
 app.MapPut("/projects/{projectId}/rules/{id}", async (int projectId, int id, Rule ruleInput, AppDbContext db) =>
 {
     var rule = await db.Rules.FirstOrDefaultAsync(r => r.ProjectId == projectId && r.Id == id);
     if (rule == null)
         return Results.NotFound();
 
-    rule.GoalVariable = ruleInput.GoalVariable;
-    rule.GoalVariableValue = ruleInput.GoalVariableValue;
     rule.Conditions = ruleInput.Conditions;
+    rule.Conclusion = ruleInput.Conclusion;
+
+    if (rule.ProjectId != ruleInput.ProjectId)
+        return Results.BadRequest("Uma regra não pode passar para outro projeto");
 
     await db.SaveChangesAsync();
     return Results.Ok(await db.Rules.FindAsync(id));
 });
 
-// DELETE: Excluir uma regra
 app.MapDelete("/projects/{projectId}/rules/{id}", async (int projectId, int id, AppDbContext db) =>
 {
     var rule = await db.Rules.FirstOrDefaultAsync(r => r.ProjectId == projectId && r.Id == id);
@@ -191,6 +214,7 @@ app.MapDelete("/projects/{projectId}/rules/{id}", async (int projectId, int id, 
     await db.SaveChangesAsync();
     return Results.NoContent();
 });
+#endregion
 
 app.UseHttpsRedirection();
 app.Run();

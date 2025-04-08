@@ -1,10 +1,13 @@
 import { Component, OnInit } from '@angular/core';
 import { MatDialog } from '@angular/material/dialog';
 import { MatSnackBar } from '@angular/material/snack-bar';
-import { Project } from '../../models/project';
-import { ProjectService } from '../../services/project.service';
+import { Project } from '../../../models/project';
+import { ProjectService } from '../../../services/project.service';
 import { DatePipe } from '@angular/common';
 import { ColumnConfig } from 'src/app/utils/constants';
+import { NgbModal } from '@ng-bootstrap/ng-bootstrap';
+import { EntityModalComponent, FieldConfig } from 'src/app/shared/entity-modal/entity-modal.component';
+import { Validators } from '@angular/forms';
 
 @Component({
   selector: 'app-projects',
@@ -37,7 +40,7 @@ export class ProjectsComponent implements OnInit {
     private projectService: ProjectService,
     private dialog: MatDialog,
     private snackBar: MatSnackBar,
-    private datePipe: DatePipe
+    private datePipe: DatePipe,
   ) { }
 
   ngOnInit(): void {
@@ -52,7 +55,41 @@ export class ProjectsComponent implements OnInit {
   }
 
   onAddProject(): void {
-    this.openProjectDialog();
+    const projectFields: FieldConfig[] = [
+        {
+          key: 'name',
+          label: 'Project Name',
+          type: 'text',
+          required: true,
+          hint: 'Enter a unique project name'
+        },
+        {
+          key: 'responsible',
+          label: 'Responsble',
+          type: 'text',
+          required: true,
+          hint: 'Responsible for the project'
+        }
+    ]
+
+    console.log(projectFields);
+    const dialogRef = this.dialog.open(EntityModalComponent, {
+        width: '600px',
+        data: {
+          title: 'Create Project',
+          icon: 'assessment',
+          fields: projectFields,
+          submitButtonText: 'Create Project'
+        }
+      });
+
+      // Get data when dialog closes
+      dialogRef.afterClosed().subscribe(result => {
+        if (result) {
+          console.log('New project data:', result);
+          // Handle the submitted data (e.g., save to database)
+        }
+      });
   }
 
   onEditProject(project: Project): void {
@@ -111,4 +148,6 @@ export class ProjectsComponent implements OnInit {
   showError(message: string): void {
     this.snackBar.open(message, 'Close', { duration: 5000, panelClass: ['error-snackbar'] });
   }
+
+
 }

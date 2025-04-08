@@ -23,7 +23,7 @@ import { MatSnackBarModule } from '@angular/material/snack-bar';
 
 // Components
 import { AppComponent } from './app.component';
-import { ProjectsComponent } from './components/projects/projects.component';
+import { ProjectsComponent } from './components/projects/list/projects.component';
 import { RulesComponent } from './components/rules/rules.component';
 import { VariablesComponent } from './components/variables/variables.component';
 import { AboutComponent } from './components/about/about.component';
@@ -36,6 +36,8 @@ import { ProjectService } from './services/project.service';
 import { RuleService } from './services/rule.service';
 import { VariableService } from './services/variable.service';
 import { DataTableComponent } from './shared/datatable/datatable.component';
+import { NgbModule } from '@ng-bootstrap/ng-bootstrap';
+import { EntityModalComponent } from './shared/entity-modal/entity-modal.component';
 
 const routes: Routes = [
   { path: 'projects', component: ProjectsComponent },
@@ -53,6 +55,7 @@ const routes: Routes = [
     VariablesComponent,
     AboutComponent,
     DataTableComponent,
+    EntityModalComponent
     // ProjectDialogComponent,
     // RuleDialogComponent,
     // VariableDialogComponent
@@ -76,7 +79,9 @@ const routes: Routes = [
     MatInputModule,
     MatSelectModule,
     MatDialogModule,
-    MatSnackBarModule
+    MatSnackBarModule,
+    NgbModule,
+    ReactiveFormsModule
   ],
   providers: [
     ProjectService,
