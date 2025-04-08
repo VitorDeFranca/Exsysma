@@ -1,6 +1,6 @@
+using ExsysmaAPI;
 using ExsysmaAPI.Data;
 using ExsysmaAPI.Models;
-using ExsysmaAPI.Utils;
 using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -21,22 +21,33 @@ if (app.Environment.IsDevelopment())
 
 #region projects
 app.MapGet("/projects", async (AppDbContext db) =>
-    await db.Projects
-        .Include(el => el.Variables)
-        .Include(el => el.Variables)
-        .ToListAsync());
+{
+    var projects = db.Projects;
 
-app.MapGet("/projects/{id}", (int id, AppDbContext db) =>
+    var projectsDTO = await projects
+        .Select(el => el.ToProjectsDTO())
+        .ToListAsync();
+
+    return Results.Ok(projectsDTO);
+});
+
+app.MapGet("/projects/{id}", async (int id, AppDbContext db) =>
 {
     var project = db.Projects
+        .Where(el => el.Id == id)
         .Include(el => el.Rules!)
             .ThenInclude(el => el.Conditions)
+            .ThenInclude(el => el.Variable)
         .Include(el => el.Rules!)
             .ThenInclude(el => el.Conclusion)
-        .Include(el => el.Variables)
-        .FirstOrDefault(el => el.Id == id);
+            .ThenInclude(el => el.Variable)
+        .Include(el => el.Variables);
 
-    return project != null ? Results.Ok(project) : Results.NotFound();
+    var projectDTO = await project
+        .Select(el => el.ToProjectDTO())
+        .FirstOrDefaultAsync();
+
+    return project != null ? Results.Ok(projectDTO) : Results.NotFound();
 });
 
 // POST: Criar um novo projeto
@@ -44,7 +55,7 @@ app.MapPost("/projects", async (Project project, AppDbContext db) =>
 {
     db.Projects.Add(project);
     await db.SaveChangesAsync();
-    return Results.Created($"/projects/{project.Id}", project);
+    return Results.Created($"/projects/{project.Id}", project.ToProjectDTO());
 });
 
 // PUT: Atualizar um projeto existente
@@ -58,7 +69,8 @@ app.MapPut("/projects/{id}", async (int id, Project projectInput, AppDbContext d
     project.Responsible = projectInput.Responsible;
 
     await db.SaveChangesAsync();
-    return Results.Ok(await db.Projects.FindAsync(id));
+    var newProject = await db.Projects.FindAsync(id)
+    return Results.Ok(newProject.ToProjectDTO());
 });
 
 // DELETE: Excluir um projeto
@@ -75,16 +87,18 @@ app.MapDelete("/projects/{id}", async (int id, AppDbContext db) =>
 #endregion
 
 #region variables
-// GET: Listar todas as variáveis de um projeto
 app.MapGet("/projects/{projectId}/variables", async (int projectId, AppDbContext db) =>
 {
-    var variables = await db.Variables
-        .Where(v => v.ProjectId == projectId)
+    var variables = db.Variables
+        .Where(v => v.ProjectId == projectId);
+
+    var variablesDTO = await variables
+        .Select(el => el.ToVariablesDTO())
         .ToListAsync();
-    return Results.Ok(variables);
+
+    return Results.Ok(variablesDTO);
 });
 
-// GET: Obter uma variável específica
 app.MapGet("/projects/{projectId}/variables/{id}", async (int projectId, int id, AppDbContext db) =>
 {
     var variable = await db.Variables
@@ -92,7 +106,6 @@ app.MapGet("/projects/{projectId}/variables/{id}", async (int projectId, int id,
     return variable != null ? Results.Ok(variable) : Results.NotFound();
 });
 
-// POST: Criar uma nova variável
 app.MapPost("/projects/{projectId}/variables", async (int projectId, Variable variable, AppDbContext db) =>
 {
     var project = await db.Projects.FindAsync(projectId);
@@ -107,7 +120,6 @@ app.MapPost("/projects/{projectId}/variables", async (int projectId, Variable va
     return Results.Created($"/projects/{projectId}/variables/{variable.Id}", variable);
 });
 
-// PUT: Atualizar uma variável existente
 app.MapPut("/projects/{projectId}/variables/{id}", async (int projectId, int id, Variable variableInput, AppDbContext db) =>
 {
     var variable = await db.Variables
@@ -128,7 +140,6 @@ app.MapPut("/projects/{projectId}/variables/{id}", async (int projectId, int id,
     return Results.Ok(await db.Variables.FindAsync(id));
 });
 
-// DELETE: Excluir uma variável
 app.MapDelete("/projects/{projectId}/variables/{id}", async (int projectId, int id, AppDbContext db) =>
 {
     var variable = await db.Variables
@@ -145,12 +156,18 @@ app.MapDelete("/projects/{projectId}/variables/{id}", async (int projectId, int 
 #region rules
 app.MapGet("/projects/{projectId}/rules", async (int projectId, AppDbContext db) =>
 {
-    var rules = await db.Rules
+    var rules = db.Rules
         .Where(r => r.ProjectId == projectId)
         .Include(el => el.Conclusion)
+            .ThenInclude(c => c.Variable)
         .Include(el => el.Conditions)
+            .ThenInclude(c => c.Variable);
+
+    var rulesDTO = await rules
+        .Select(el => el.ToRulesDTO())
         .ToListAsync();
-    return Results.Ok(rules);
+
+    return Results.Ok(rulesDTO);
 });
 
 app.MapGet("/projects/{projectId}/rules/{id}", async (int projectId, int id, AppDbContext db) =>
@@ -177,15 +194,29 @@ app.MapPost("/projects/{projectId}/rules", async (int projectId, Rule rule, AppD
 
     rule.ProjectId = projectId;
 
-    var conclusionVariable = await db.Variables.FindAsync(rule.Conclusion.VariableId);
-    if (conclusionVariable is null) return Results.NotFound("Variável de conclusão não foi encontrada.");
+    //verifica se as variáveis de condição existem naquele projeto e se o valor delas está dentro do esperado
+    foreach (var condition in rule.Conditions) {
+        var variableId = condition.VariableId;
+        if (!db.Variables.Any(el => el.Id == variableId && el.ProjectId == projectId))
+            return Results.BadRequest($"Não existe variável de ID {condition.VariableId} para o projeto de ID {projectId}");
 
+        var variable = await db.Variables.FindAsync(variableId);
+        if (!variable.PossibleValues.Contains(condition.Value))
+            return Results.BadRequest($"Não existe o valor {condition.Value} para a variável de ID {condition.VariableId}");
+    }
+
+    //verfica se a variável de conclusão existe nesse projeto, se ela é variável-objetivo e se o valor dela está dentro do esperado
+    if (!db.Variables.Any(el => el.Id == rule.Conclusion.VariableId && el.ProjectId == projectId))
+        return Results.BadRequest($"Não existe variável de ID {rule.Conclusion.VariableId} para o projeto de ID {projectId}");
+    var conclusionVariable = await db.Variables.FindAsync(rule.Conclusion.VariableId);
     if (!conclusionVariable.IsGoalVariable)
         return Results.BadRequest("Uma variável que não seja objetivo não pode ser usada na conclusão.");
+    if (!conclusionVariable.PossibleValues.Contains(rule.Conclusion.Value))
+        return Results.BadRequest($"Não existe o valor {rule.Conclusion.Value} para a variável de ID {conclusionVariable.Id}");
 
     db.Rules.Add(rule);
     await db.SaveChangesAsync();
-    return Results.Created($"/projects/{projectId}/rules/{rule.Id}", rule);
+    return Results.Created($"/projects/{projectId}/rules/{rule.Id}", rule.ToRulesDTO());
 });
 
 app.MapPut("/projects/{projectId}/rules/{id}", async (int projectId, int id, Rule ruleInput, AppDbContext db) =>
@@ -201,7 +232,8 @@ app.MapPut("/projects/{projectId}/rules/{id}", async (int projectId, int id, Rul
         return Results.BadRequest("Uma regra não pode passar para outro projeto");
 
     await db.SaveChangesAsync();
-    return Results.Ok(await db.Rules.FindAsync(id));
+    var newRule = await db.Rules.FindAsync(id);
+    return Results.Ok(newRule.ToRulesDTO);
 });
 
 app.MapDelete("/projects/{projectId}/rules/{id}", async (int projectId, int id, AppDbContext db) =>
@@ -212,7 +244,7 @@ app.MapDelete("/projects/{projectId}/rules/{id}", async (int projectId, int id, 
 
     db.Rules.Remove(rule);
     await db.SaveChangesAsync();
-    return Results.NoContent();
+    return Results.Ok();
 });
 #endregion
 

@@ -11,18 +11,18 @@ namespace ExsysmaAPI.Models
         public int Id { get; set; }
         public string Name { get; set; }
         public int ProjectId { get; set; }
-        public Project Project { get; set; }
         public string? QuestionDescription { get; set; }
         public bool IsGoalVariable { get; set; }
         public List<string> PossibleValues { get; set; }
         public VariableType Type { get; set; }
 
-        public GetVariablesDTO ToGetVariablesDTO(Variable variable)
+        public GetVariablesDTO ToVariablesDTO()
         {
             return new GetVariablesDTO
             {
-                Name = variable.Name,
-                ProjectName = variable.Project.Name
+                VariableId = Id,
+                Name = Name,
+                IsGoalVariable = IsGoalVariable
             };
         }
     }

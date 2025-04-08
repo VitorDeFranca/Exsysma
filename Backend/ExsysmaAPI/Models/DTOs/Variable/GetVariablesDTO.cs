@@ -7,12 +7,13 @@ namespace ExsysmaAPI.Models.DTOs.Variable
 {
     public class GetVariablesDTO
     {
-       public string Name { get; set; }
-       public string ProjectName { get; set; }
+        public int VariableId { get; set; }
+        public string Name { get; set; }
+        public bool IsGoalVariable { get; set; }
 
-       public GetVariablesDTO()
-       {
+        public GetVariablesDTO()
+        {
 
-       }
+        }
     }
 }

@@ -6,7 +6,7 @@ using System.Runtime.ExceptionServices;
 using System.Threading.Tasks;
 using ExsysmaAPI.Models;
 
-namespace ExsysmaAPI.Utils
+namespace ExsysmaAPI
 {
     public static class Utils
     {
